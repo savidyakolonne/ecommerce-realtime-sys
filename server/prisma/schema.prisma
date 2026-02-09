@@ -1,82 +1,129 @@
 datasource db {
   provider = "postgresql"
-  url      = env("https://supabase.com/dashboard/project/gvzbghsrroivinjviard")
 }
 
 generator client {
   provider = "prisma-client-js"
 }
 
-model User {
-  id       Int     @id @default(autoincrement())
-  name     String
-  email    String  @unique
-  password String
-  role     String  // customer, cashier, admin, manager
-  orders   Order[]
+enum Role {
+  CUSTOMER
+  POS_OPERATOR
+  BRANCH_MANAGER
+  HQ_ADMIN
 }
 
-model Product {
-  id          Int      @id @default(autoincrement())
-  name        String
-  price       Float
-  sku         String   @unique
-  category    String?
-  description String?
-  inventory   Inventory[]
-  items       OrderItem[]
+enum OrderType {
+  PICKUP
+  DELIVERY
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PACKING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum MovementReason {
+  SALE
+  RETURN
+  RESTOCK
+  ADJUSTMENT
 }
 
 model Branch {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(cuid())
   name      String
-  address   String
+  address   String?
+  lat       Float?
+  lng       Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  terminals PosTerminal[]
   inventory Inventory[]
   orders    Order[]
+  movements InventoryMovement[]
+}
+
+model PosTerminal {
+  id         String    @id @default(cuid())
+  branchId   String
+  name       String
+  deviceCode String    @unique
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  branch    Branch              @relation(fields: [branchId], references: [id])
+  movements InventoryMovement[]
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  sku       String   @unique
+  name      String
+  price     Int // store in cents (LKR * 100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventory Inventory[]
+  items     OrderItem[]
+  movements InventoryMovement[]
 }
 
 model Inventory {
-  id        Int      @id @default(autoincrement())
-  productId Int
-  branchId  Int
-  stock     Int      @default(0)
+  branchId     String
+  productId    String
+  qty          Int
+  thresholdQty Int       @default(5)
+  expiryDate   DateTime?
+  updatedAt    DateTime  @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
   branch  Branch  @relation(fields: [branchId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([branchId, productId]) // composite PK
 }
 
 model Order {
-  id        Int         @id @default(autoincrement())
-  userId    Int
-  branchId  Int
-  total     Float
-  status    String
-  createdAt DateTime @default(now())
+  id         String      @id @default(cuid())
+  customerId String? // keep optional for now (we’ll add users later)
+  branchId   String
+  orderType  OrderType
+  status     OrderStatus @default(PENDING)
+  total      Int         @default(0)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
-  user   User     @relation(fields: [userId], references: [id])
-  branch Branch   @relation(fields: [branchId], references: [id])
+  branch Branch      @relation(fields: [branchId], references: [id])
   items  OrderItem[]
 }
 
 model OrderItem {
-  id        Int     @id @default(autoincrement())
-  orderId   Int
-  productId Int
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
   qty       Int
-  price     Float
+  unitPrice Int
 
   order   Order   @relation(fields: [orderId], references: [id])
   product Product @relation(fields: [productId], references: [id])
 }
 
-model Prediction {
-  id            Int      @id @default(autoincrement())
-  productId     Int
-  branchId      Int
-  date          DateTime
-  expectedSales Float
-  createdAt     DateTime @default(now())
+model InventoryMovement {
+  id         String         @id @default(cuid())
+  branchId   String
+  productId  String
+  terminalId String?
+  userId     String?
+  delta      Int
+  reason     MovementReason
+  createdAt  DateTime       @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
-  branch  Branch  @relation(fields: [branchId], references: [id])
+  branch   Branch       @relation(fields: [branchId], references: [id])
+  product  Product      @relation(fields: [productId], references: [id])
+  terminal PosTerminal? @relation(fields: [terminalId], references: [id])
 }
